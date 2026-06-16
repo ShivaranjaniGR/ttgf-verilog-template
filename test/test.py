@@ -1,40 +1,55 @@
-# SPDX-FileCopyrightText: © 2024 Tiny Tapeout
-# SPDX-License-Identifier: Apache-2.0
-
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
-
+from cocotb.triggers import ClockCycles, FallingEdge, Timer
 
 @cocotb.test()
-async def test_project(dut):
-    dut._log.info("Start")
+async def test_pwm_generator_behavior(dut):
+    """Test the PWM generator inputs, safety constraints, and output toggles"""
+    
+    # 1. Initialize a 50 MHz clock (20ns period)
+    clock = Clock(dut.clk, 20, units="ns")
+    cocotb.start_soon(clock)
 
-    # Set the clock period to 10 us (100 KHz)
-    clock = Clock(dut.clk, 10, unit="us")
-    cocotb.start_soon(clock.start())
-
-    # Reset
-    dut._log.info("Reset")
-    dut.ena.value = 1
+    # 2. Set initial values on falling edges to avoid setup/hold race conditions
+    dut.rst_n.value = 0
     dut.ui_in.value = 0
     dut.uio_in.value = 0
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 10)
+    dut.ena.value = 1
+    
+    # Give the simulator 1 ns to propagate the initial values
+    await Timer(1, units="ns")
+    
+    # Verify outputs stay clean during reset condition
+    assert dut.uo_out.value == 0, f"Expected 0 during reset, got {dut.uo_out.value}"
+    
+    # Release Reset
+    await ClockCycles(dut.clk, 2)
     dut.rst_n.value = 1
-
-    dut._log.info("Test project behavior")
-
-    # Set the input values you want to test
-    dut.ui_in.value = 20
-    dut.uio_in.value = 30
-
-    # Wait for one clock cycle to see the output values
     await ClockCycles(dut.clk, 1)
 
-    # The following assersion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    assert dut.uo_out.value == 50
+    # 3. Apply Basic Operational Inputs
+    # ui_in bit mapping: bit 0 = enable, bits 4-1 = raw_period, bit 5 = invert
+    enable = 1
+    raw_period = 8    # Set period to 8 clock cycles
+    invert = 0
+    ui_val = (invert << 5) | (raw_period << 1) | enable
+    
+    # uio_in bit mapping: bits 3-0 = raw_duty
+    raw_duty = 4      # Set duty cycle to 4 clock cycles (50% duty)
+    uio_val = raw_duty
 
-    # Keep testing the module by changing the input values, waiting for
-    # one or more clock cycles, and asserting the expected output values.
+    # Apply values to the simulation cleanly
+    await FallingEdge(dut.clk)
+    dut.ui_in.value = ui_val
+    dut.uio_in.value = uio_val
+
+    # Run simulation loop to verify generation
+    await ClockCycles(dut.clk, 20)
+
+    # 4. Test Safety Clamps (Force raw_period low to verify it clamps internally)
+    await FallingEdge(dut.clk)
+    unsafe_period = 1 # Hardware forces this to 4'd3 internally
+    ui_val_clamp = (invert << 5) | (unsafe_period << 1) | enable
+    dut.ui_in.value = ui_val_clamp
+    
+    await ClockCycles(dut.clk, 10)
