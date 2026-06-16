@@ -2,7 +2,7 @@
 
 module tb;
 
-    // Standard testbench wires driven by cocotb
+    // Standard signals driven by cocotb
     reg        clk;
     reg        rst_n;
     reg        ena;
@@ -12,11 +12,14 @@ module tb;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
 
-    // Instantiate your exact module configuration
+    // Connects directly to the corrected toolchain ports
     tt_um_example uut (
         .ui_in   (ui_in),
         .uo_out  (uo_out),
-        .uio     (uio_in), // Directly connecting the input vectors to your combined wire
+        .uio_in  (uio_in),
+        .uio_out (uio_out),
+        .uio_oe  (uio_oe),
+        .ena     (ena),
         .clk     (clk),
         .rst_n   (rst_n)
     );
