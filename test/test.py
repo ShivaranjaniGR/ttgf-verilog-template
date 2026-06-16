@@ -1,6 +1,6 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, FallingEdge
+from cocotb.triggers import ClockCycles, FallingEdge, Timer
 
 @cocotb.test()
 async def test_pwm_generator_behavior(dut):
@@ -10,16 +10,20 @@ async def test_pwm_generator_behavior(dut):
     clock = Clock(dut.clk, 20, units="ns")
     cocotb.start_soon(clock)
 
-    # 2. Assert Reset System-wide
+    # 2. Set initial values on falling edges to avoid setup/hold race conditions
     dut.rst_n.value = 0
     dut.ui_in.value = 0
     dut.uio_in.value = 0
-    await ClockCycles(dut.clk, 2)
+    dut.ena.value = 1
     
-    # Verify outputs stay low during a reset condition
-    assert dut.uo_out.value == 0, "Outputs leaked logic high during reset!"
+    # Give the simulator 1 ns to propagate the initial values
+    await Timer(1, units="ns")
+    
+    # Verify outputs stay clean during reset condition
+    assert dut.uo_out.value == 0, f"Expected 0 during reset, got {dut.uo_out.value}"
     
     # Release Reset
+    await ClockCycles(dut.clk, 2)
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 1)
 
@@ -34,17 +38,17 @@ async def test_pwm_generator_behavior(dut):
     raw_duty = 4      # Set duty cycle to 4 clock cycles (50% duty)
     uio_val = raw_duty
 
-    # Apply values to the simulation on the falling clock edge
+    # Apply values to the simulation cleanly
     await FallingEdge(dut.clk)
     dut.ui_in.value = ui_val
     dut.uio_in.value = uio_val
 
-    # Let the simulation run for 20 clock cycles to watch the waves generate
+    # Run simulation loop to verify generation
     await ClockCycles(dut.clk, 20)
 
-    # 4. Test the Safety Clamps (Force period low to see if it clamps to 3)
+    # 4. Test Safety Clamps (Force raw_period low to verify it clamps internally)
     await FallingEdge(dut.clk)
-    unsafe_period = 1 # Should automatically clamp to 3 internally
+    unsafe_period = 1 # Hardware forces this to 4'd3 internally
     ui_val_clamp = (invert << 5) | (unsafe_period << 1) | enable
     dut.ui_in.value = ui_val_clamp
     
