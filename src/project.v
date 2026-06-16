@@ -63,4 +63,5 @@ module tt_um_example (
   assign uo_out[1] = enable ? ~pwm : 1'b0; // complementary pwm out
   assign uo_out[7:2] = 6'b0;
 
-endmodule
+endmodule   
+// end of module
